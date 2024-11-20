@@ -4,6 +4,7 @@ import shutil
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tensorboard.plugins.hparams import api as hp
 
 gpus = tf.config.list_physical_devices("GPU")
 if gpus:
@@ -19,12 +20,14 @@ if gpus:
 
 
 class Trainer:
-    def __init__(self, filename: str, path: str = "./data/images"):
+    def __init__(self, filename: str, path: str = "./data/images", mode: str = "train"):
         self.batch_size = 32
         self.img_height = 128
         self.img_width = 128
         self.dataframe = pd.read_csv(filename, converters={"Number": str})
-        self.path = path
+        self.mode = mode
+        self.path = path + "/" + self.mode
+        self.test_path = path + "/" + "test"
 
     def create_classes(self):
 
@@ -61,6 +64,15 @@ class Trainer:
             batch_size=self.batch_size,
         )
 
+        self.test_ds: tf.data.Dataset = tf.keras.utils.image_dataset_from_directory(
+            self.test_path,
+            labels="inferred",
+            color_mode="rgb",
+            seed=123,
+            image_size=(self.img_height, self.img_width),
+            batch_size=self.batch_size,
+        )
+
         class_names = self.train_ds.class_names
         self.n_classes = len(class_names)
 
@@ -78,16 +90,19 @@ class Trainer:
         self.train_ds = self.train_ds.cache().prefetch(buffer_size=AUTOTUNE)
         self.val_ds = self.val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
-    def train(self):
-        self.create_dataset()
+    def train_test_model(self, hparams):
+        # logs = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+        # tboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logs, histogram_freq=1)
+        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
         model = tf.keras.Sequential(
             [
                 tf.keras.layers.Rescaling(1.0 / 255),
-                tf.keras.layers.Conv2D(32, 5, activation="relu"),
+                tf.keras.layers.Conv2D(hparams[self.HP_NUM_UNITS_1], 5, activation="relu"),
                 tf.keras.layers.MaxPooling2D(),
-                tf.keras.layers.Conv2D(32, 5, activation="relu"),
+                tf.keras.layers.Conv2D(hparams[self.HP_NUM_UNITS_2], 5, activation="relu"),
                 tf.keras.layers.MaxPooling2D(),
-                tf.keras.layers.Conv2D(32, 5, activation="relu"),
+                tf.keras.layers.Conv2D(hparams[self.HP_NUM_UNITS_3], 5, activation="relu"),
                 tf.keras.layers.MaxPooling2D(),
                 tf.keras.layers.Flatten(),
                 tf.keras.layers.Dense(128, activation="relu"),
@@ -100,16 +115,60 @@ class Trainer:
             optimizer=tf.keras.optimizers.Adam(1e-5),
             metrics=["accuracy"],
         )
-
-        # Create a TensorBoard callback
-        logs = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-
-        tboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logs, histogram_freq=1)
-
         model.fit(
             self.train_ds,
-            epochs=10,
+            epochs=50,
             validation_data=self.val_ds,
-            callbacks=[tboard_callback],
+            callbacks=[callback],
             class_weight=self.class_weights
         )
+        _, accuracy = model.evaluate(self.test_ds)
+        return accuracy
+
+    def run(self, run_dir, hparams):
+        with tf.summary.create_file_writer(run_dir).as_default():
+            hp.hparams(hparams)  # record the values used in this trial
+            accuracy = self.train_test_model(hparams)
+            tf.summary.scalar("accuracy", accuracy, step=1)
+
+
+    
+    def train(self):
+        self.create_dataset()
+        self.HP_NUM_UNITS_1 = hp.HParam('num_units_first', hp.Discrete([16, 32, 64]))
+        self.HP_NUM_UNITS_2 = hp.HParam('num_units_second', hp.Discrete([16, 32, 64]))
+        self.HP_NUM_UNITS_3 = hp.HParam('num_units_third', hp.Discrete([16, 32, 64]))
+        with tf.summary.create_file_writer('logs/hparam_tuning').as_default():
+            hp.hparams_config(
+                hparams=[self.HP_NUM_UNITS_1, self.HP_NUM_UNITS_2, self.HP_NUM_UNITS_3],
+                metrics=[hp.Metric("accuracy", display_name='Accuracy')],
+            )
+
+        session_num = 0
+
+        for num_units_i in self.HP_NUM_UNITS_1.domain.values:
+            for num_units_j in self.HP_NUM_UNITS_2.domain.values:
+                for num_units_k in self.HP_NUM_UNITS_3.domain.values:
+                    hparams = {
+                        self.HP_NUM_UNITS_1: num_units_i,
+                        self.HP_NUM_UNITS_2: num_units_j,
+                        self.HP_NUM_UNITS_3: num_units_k,
+                        # HP_DROPOUT: dropout_rate,
+                        # HP_OPTIMIZER: optimizer,
+                    }
+                    run_name = "run-%d" % session_num
+                    print('--- Starting trial: %s' % run_name)
+                    print({h.name: hparams[h] for h in hparams})
+                    self.run('logs/hparam_tuning/' + run_name, hparams)
+                    session_num += 1
+        
+
+        
+
+        # Create a TensorBoard callback
+        # logs = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+        # tboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logs, histogram_freq=1)
+        # callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
+
+        
