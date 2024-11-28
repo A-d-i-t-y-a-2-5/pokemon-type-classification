@@ -1,7 +1,9 @@
 from datetime import datetime
+from glob import glob
 import io
 import itertools
 import os
+from pprint import pprint
 import shutil
 
 import matplotlib.pyplot as plt
@@ -38,6 +40,43 @@ class Trainer:
         self.path = path + "/" + self.mode
         self.test_path = path + "/" + "test"
 
+    def class_indices(self):
+        type_training_paths = glob(f"{self.path}/*")
+        type_classes = sorted(
+            [path.split("/")[-1] for path in type_training_paths]
+        )
+        self.type_lookup = layers.StringLookup(vocabulary=type_classes)
+        # self.class_indices_dict = dict(zip(type_classes, range(len(type_classes))))
+
+    def make_ds(self, path):
+        BUFFER_SIZE = 256
+        # print(path)
+        ds = tf.data.Dataset.list_files(path + "/*.png", shuffle=False)
+        # print(ds)
+        ds = ds.shuffle(BUFFER_SIZE).repeat()
+        return ds
+
+    def process_path(self, file_path):
+        # print(file_path, os.path.sep)
+        parts = tf.strings.split(file_path, os.path.sep)
+        # parts = file_path.split(os.path.sep)
+        # print(parts)
+
+        # type_val = tf.keras.backend.get_value(parts[-2])
+        label = self.type_lookup(parts[-2]) - 1
+
+        img = tf.io.read_file(file_path)
+        img = tf.io.decode_jpeg(img, channels=3)
+        img = tf.image.resize(img, [self.img_height, self.img_width])
+
+        return img, label
+
+    def oversample(self):
+        type_training_paths = glob(f"{self.path}/*")
+        type_ds_list = [self.make_ds(path) for path in type_training_paths]
+        return type_ds_list
+        # pprint(type_training_paths)
+
     def create_classes(self):
 
         dex_primary_type = self.dataframe[["Number", "Type 1"]].values.tolist()
@@ -55,7 +94,7 @@ class Trainer:
         returns it. The supplied figure is closed and inaccessible after this call."""
         # Save the plot to a PNG in memory.
         buf = io.BytesIO()
-        plt.savefig(buf, format='png')
+        plt.savefig(buf, format="png")
         # Closing the figure prevents it from being displayed directly inside
         # the notebook.
         plt.close(figure)
@@ -122,7 +161,9 @@ class Trainer:
             log_dir=run_dir, histogram_freq=1, write_images=True
         )
         callback = tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=10)
-        cm_callback = tf.keras.callbacks.LambdaCallback(on_epoch_end=self.log_confusion_matrix)
+        cm_callback = tf.keras.callbacks.LambdaCallback(
+            on_epoch_end=self.log_confusion_matrix
+        )
 
         data_augmentation = keras.Sequential(
             [
@@ -172,6 +213,21 @@ class Trainer:
         print(accuracy)
 
     def train(self):
+        self.class_indices()
+        type_dataset_list = self.oversample()
+        type_ds = type_dataset_list[0].map(
+            self.process_path, num_parallel_calls=tf.data.AUTOTUNE
+        )
+        for i, j in type_ds:
+            print(i, j)
+            break
+        # for i in type_dataset_list[0]:
+        #     print(i.numpy().decode("utf-8"))
+        #     # print(type(i))
+        #     break
+
+        # type_ds = [ds.map(self.process_path, num_parallel_calls=tf.data.AUTOTUNE) for ds in type_dataset_list]
+        return
         self.create_dataset()
         self.run("logs/image/" + datetime.now().strftime("%Y%m%d-%H%M%S"))
 
@@ -180,7 +236,7 @@ class Trainer:
 
         # tboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logs, histogram_freq=1)
         # callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
-    
+
     def plot_confusion_matrix(self, cm, class_names):
         """
         Returns a matplotlib figure containing the plotted confusion matrix.
@@ -190,7 +246,7 @@ class Trainer:
             class_names (array, shape = [n]): String names of the integer classes
         """
         figure = plt.figure(figsize=(8, 8))
-        plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+        plt.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
         plt.title("Confusion matrix")
         plt.colorbar()
         tick_marks = np.arange(len(class_names))
@@ -198,19 +254,21 @@ class Trainer:
         plt.yticks(tick_marks, class_names)
 
         # Compute the labels from the normalized confusion matrix.
-        labels = np.around(cm.astype('float') / cm.sum(axis=1)[:, np.newaxis], decimals=2)
+        labels = np.around(
+            cm.astype("float") / cm.sum(axis=1)[:, np.newaxis], decimals=2
+        )
 
         # Use white text if squares are dark; otherwise black.
-        threshold = cm.max() / 2.
+        threshold = cm.max() / 2.0
         for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
             color = "white" if cm[i, j] > threshold else "black"
             plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
 
         plt.tight_layout()
-        plt.ylabel('True label')
-        plt.xlabel('Predicted label')
+        plt.ylabel("True label")
+        plt.xlabel("Predicted label")
         return figure
-    
+
     def log_confusion_matrix(self, epoch, logs):
         # Use the model to predict the values from the validation dataset.
         test_pred_raw = self.model.predict(self.test_ds)
@@ -218,7 +276,7 @@ class Trainer:
 
         logdir = "logs/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
         test_labels = np.concatenate([y for x, y in self.test_ds], axis=0)
-        file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')
+        file_writer_cm = tf.summary.create_file_writer(logdir + "/cm")
 
         # Calculate the confusion matrix.
         cm = metrics.confusion_matrix(test_labels, test_pred)
@@ -229,5 +287,3 @@ class Trainer:
         # Log the confusion matrix as an image summary.
         with file_writer_cm.as_default():
             tf.summary.image("epoch_confusion_matrix", cm_image, step=epoch)
-
-
