@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime
 from glob import glob
 import io
@@ -12,6 +13,7 @@ import pandas as pd
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 from sklearn import metrics
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -42,18 +44,29 @@ class Trainer:
 
     def class_indices(self):
         type_training_paths = glob(f"{self.path}/*")
-        type_classes = sorted(
-            [path.split("/")[-1] for path in type_training_paths]
-        )
+        type_classes = sorted([path.split("/")[-1] for path in type_training_paths])
         self.type_lookup = layers.StringLookup(vocabulary=type_classes)
         # self.class_indices_dict = dict(zip(type_classes, range(len(type_classes))))
+
+    def stratified_split(self):
+        X = glob(f"{self.path}/*/*.png")
+        y = list(map(lambda x: x.split("/")[-2], X))
+        # skf = StratifiedKFold(n_splits=3)
+        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
+            X, y, stratify=y, test_size=0.2
+        )
+        # print(pd.DataFrame(y_train).value_counts(normalize=True))
+        # print(pd.DataFrame(y_test).value_counts(normalize=True))
+        # pprint(Counter(y_train))
+        # pprint(Counter(y_test))
 
     def make_ds(self, path):
         BUFFER_SIZE = 256
         # print(path)
-        ds = tf.data.Dataset.list_files(path + "/*.png", shuffle=False)
+        # ds = tf.data.Dataset.list_files(path + "/*.png", shuffle=False)
+        ds = tf.data.Dataset.from_tensor_slices(path)
         # print(ds)
-        ds = ds.shuffle(BUFFER_SIZE).repeat()
+        ds = ds.shuffle(BUFFER_SIZE)
         return ds
 
     def process_path(self, file_path):
@@ -71,9 +84,26 @@ class Trainer:
 
         return img, label
 
-    def oversample(self):
-        type_training_paths = glob(f"{self.path}/*")
-        type_ds_list = [self.make_ds(path) for path in type_training_paths]
+    def oversample(self, X, y):
+        """
+        Returns a list of Dataset objects for each class
+        """
+        # type_training_paths = glob(f"{self.path}/*")
+        # type_ds_list = [self.make_ds(path) for path in type_training_paths]
+        # return type_ds_list
+        X = np.array(X)
+        y = np.array(y)
+        unique_classes = np.unique(y)
+        type_ds_list = []
+        for type_cls in unique_classes:
+            # Get indices of the current class
+            indices = np.where(y == type_cls)[0]
+            X_class = X[indices]
+            # y_class = y[indices]
+            dataset = tf.data.Dataset.from_tensor_slices(X_class)
+            # print(len(X_class))
+            dataset = dataset.shuffle(buffer_size=len(X_class)).repeat()
+            type_ds_list.append(dataset)
         return type_ds_list
         # pprint(type_training_paths)
 
@@ -106,27 +136,27 @@ class Trainer:
         return image
 
     def create_dataset(self):
-        self.train_ds: tf.data.Dataset = tf.keras.utils.image_dataset_from_directory(
-            self.path,
-            labels="inferred",
-            color_mode="rgb",
-            validation_split=0.2,
-            subset="training",
-            seed=123,
-            image_size=(self.img_height, self.img_width),
-            batch_size=self.batch_size,
-        )
+        # self.train_ds: tf.data.Dataset = tf.keras.utils.image_dataset_from_directory(
+        #     self.path,
+        #     labels="inferred",
+        #     color_mode="rgb",
+        #     validation_split=0.2,
+        #     subset="training",
+        #     seed=123,
+        #     image_size=(self.img_height, self.img_width),
+        #     batch_size=self.batch_size,
+        # )
 
-        self.val_ds: tf.data.Dataset = tf.keras.utils.image_dataset_from_directory(
-            self.path,
-            labels="inferred",
-            color_mode="rgb",
-            validation_split=0.2,
-            subset="validation",
-            seed=123,
-            image_size=(self.img_height, self.img_width),
-            batch_size=self.batch_size,
-        )
+        # self.val_ds: tf.data.Dataset = tf.keras.utils.image_dataset_from_directory(
+        #     self.path,
+        #     labels="inferred",
+        #     color_mode="rgb",
+        #     validation_split=0.2,
+        #     subset="validation",
+        #     seed=123,
+        #     image_size=(self.img_height, self.img_width),
+        #     batch_size=self.batch_size,
+        # )
 
         self.test_ds: tf.data.Dataset = tf.keras.utils.image_dataset_from_directory(
             self.test_path,
@@ -137,7 +167,7 @@ class Trainer:
             batch_size=self.batch_size,
         )
 
-        self.class_names = self.train_ds.class_names
+        # self.class_names = self.train_ds.class_names
         # self.n_classes = len(class_names)
 
         # count = np.zeros(self.n_classes, dtype=np.int32)
@@ -150,9 +180,9 @@ class Trainer:
         #     for i in range(self.n_classes)
         # }
 
-        AUTOTUNE = tf.data.AUTOTUNE
-        self.train_ds = self.train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-        self.val_ds = self.val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+        # AUTOTUNE = tf.data.AUTOTUNE
+        # self.train_ds = self.train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+        # self.val_ds = self.val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
     def train_test_model(self, run_dir):
         # logs = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -213,23 +243,46 @@ class Trainer:
         print(accuracy)
 
     def train(self):
+        self.stratified_split()
         self.class_indices()
-        type_dataset_list = self.oversample()
-        type_ds = type_dataset_list[0].map(
-            self.process_path, num_parallel_calls=tf.data.AUTOTUNE
+        self.train_ds = (
+            self.resample_dataset(self.X_train, self.y_train)
+            .batch(self.batch_size)
+            .cache()
+            .prefetch(buffer_size=tf.data.AUTOTUNE)
         )
-        for i, j in type_ds:
-            print(i, j)
-            break
+        self.val_ds = (
+            self.resample_dataset(self.X_test, self.y_test)
+            .batch(self.batch_size)
+            .cache()
+            .prefetch(buffer_size=tf.data.AUTOTUNE)
+        )
+        # count = 0
+        # for i,j in self.train_ds:
+        #     count += j.shape[0]
+        #     # break
+        # print(count)
+        # return
         # for i in type_dataset_list[0]:
         #     print(i.numpy().decode("utf-8"))
         #     # print(type(i))
         #     break
 
         # type_ds = [ds.map(self.process_path, num_parallel_calls=tf.data.AUTOTUNE) for ds in type_dataset_list]
-        return
         self.create_dataset()
         self.run("logs/image/" + datetime.now().strftime("%Y%m%d-%H%M%S"))
+
+    def resample_dataset(self, X, y):
+        type_dataset_list = self.oversample(X, y)
+        # print(len(type_dataset_list))
+        type_ds = [
+            td.map(self.process_path, num_parallel_calls=tf.data.AUTOTUNE).take(256)
+            for td in type_dataset_list
+        ]
+        resampled_ds = tf.data.Dataset.sample_from_datasets(
+            type_ds, weights=[1 / (len(type_ds))] * (len(type_ds))
+        )
+        return resampled_ds
 
         # Create a TensorBoard callback
         # logs = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -281,7 +334,7 @@ class Trainer:
         # Calculate the confusion matrix.
         cm = metrics.confusion_matrix(test_labels, test_pred)
         # Log the confusion matrix as an image summary.
-        figure = self.plot_confusion_matrix(cm, class_names=self.class_names)
+        figure = self.plot_confusion_matrix(cm, class_names=self.type_lookup.get_vocabulary(False))
         cm_image = self.plot_to_image(figure)
 
         # Log the confusion matrix as an image summary.
