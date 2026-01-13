@@ -1,0 +1,14 @@
+[project]
+name = "pokemon-images"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ipykernel>=7.1.0",
+    "nbformat>=5.10.4",
+    "pandas>=2.3.3",
+    "plotly>=6.5.1",
+    "scikit-image>=0.25.2",
+    "scikit-learn>=1.7.2",
+]
