@@ -5,11 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "aiofiles>=25.1.0",
+    "fastapi>=0.131.0",
     "ipykernel>=7.1.0",
     "nbformat>=5.10.4",
     "pandas>=2.3.3",
     "plotly>=6.5.1",
+    "python-multipart>=0.0.22",
     "scikit-image>=0.25.2",
     "scikit-learn>=1.7.2",
     "streamlit>=1.54.0",
+    "uvicorn>=0.41.0",
 ]

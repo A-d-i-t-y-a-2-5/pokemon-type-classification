@@ -1,5 +1,7 @@
+import os
 import random
 
+import requests
 import streamlit as st
 
 from PIL import Image
@@ -11,14 +13,10 @@ uploaded_files = st.file_uploader(
     key="file_uploader",
 )
 
-if uploaded_files:
-    st.write(f"Total images uploaded: {len(uploaded_files)}")
-
-    sample_files = random.sample(uploaded_files, min(5, len(uploaded_files)))
-
-    st.subheader("Sample of Uploaded Images")
-    cols = st.columns(5)
-
-    for col, file in zip(cols, sample_files):
-        image = Image.open(file)
-        col.image(image, caption=file.name, width="stretch")
+if st.button("Submit"):
+    if uploaded_files is not None:
+        files = [("files", (file.name, file, file.type)) for file in uploaded_files]
+        response = requests.post("http://localhost:8000/upload", files=files)
+        st.write(response.text)
+    else:
+        st.write("No file uploaded.")
