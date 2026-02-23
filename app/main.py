@@ -1,4 +1,9 @@
-from fastapi import FastAPI, HTTPException, UploadFile, status, File
+import os
+
+import aiofiles
+from aiofiles.os import listdir, remove, rmdir
+from contextlib import asynccontextmanager
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, status, File
 from typing import Annotated
 from upload import save_file
 import uvicorn
@@ -9,7 +14,26 @@ ALLOWED_CONTENT_TYPES = {
     "image/png",
 }
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    try:
+        files = await listdir("uploads")
+        for file in files:
+            await remove(os.path.join("uploads", file))
+        await rmdir("uploads")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"An error occurred while deleting files - Error: {e}")
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+def paginate(skip: int = 0, limit: int = 5):
+    return {"skip": skip, "limit": limit}
 
 
 @app.post("/upload")
@@ -31,6 +55,26 @@ async def file_upload_controller(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     return {"message": "Files uploaded successfully"}
+
+
+@app.get("/images")
+async def get_images_controller(pagination: dict = Depends(paginate)):
+    try:
+        images = await listdir("uploads")
+        paginated = images[
+            pagination["skip"] : pagination["skip"] + pagination["limit"]
+        ]
+    except FileNotFoundError:
+        raise HTTPException(
+            detail="Uploads directory not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    except Exception as e:
+        raise HTTPException(
+            detail=f"An error occurred while retrieving images - Error: {e}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return {"images": paginated, "total": len(images)}
 
 
 if __name__ == "__main__":
