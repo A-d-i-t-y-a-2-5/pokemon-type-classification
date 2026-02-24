@@ -1,6 +1,6 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter
-from base import VectorDatabase
+from app.db.base import VectorDatabase
 
 class QdrantVectorDatabase(VectorDatabase):
 
@@ -20,15 +20,22 @@ class QdrantVectorDatabase(VectorDatabase):
                     size=vector_size,
                     distance=Distance.COSINE,
                 ),
-        )
+            )
 
-    def insert(self, id: str, vector: list[float], metadata: dict | None = None) -> None:
+    def insert(
+        self, id: str, vector: list[float], metadata: dict | None = None
+    ) -> None:
         self.client.upsert(
             collection_name=self.collection_name,
             points=[PointStruct(id=id, vector=vector, payload=metadata or {})],
         )
 
-    def insert_many(self, ids: list[str], vectors: list[list[float]], metadata: list[dict] | None = None) -> None:
+    def insert_many(
+        self,
+        ids: list[str],
+        vectors: list[list[float]],
+        metadata: list[dict] | None = None,
+    ) -> None:
         self.client.upsert(
             collection_name=self.collection_name,
             points=[
@@ -38,22 +45,16 @@ class QdrantVectorDatabase(VectorDatabase):
         )
 
     def search(self, query_vector: list[float], top_k: int = 5) -> list[dict]:
-        results = self.client.search(
+        results = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=query_vector,
+            query=query_vector,
             limit=top_k,
             with_payload=True,
         )
-        return [
-            {
-                "id": result.id,
-                "score": result.score,
-                "metadata": result.payload,
-            }
-            for result in results
-        ]
 
-    def delete(self, id: str) -> None:
+        return results.points
+
+    def delete(self, id) -> None:
         self.client.delete(
             collection_name=self.collection_name,
             points_selector=[id],
@@ -80,10 +81,3 @@ class QdrantVectorDatabase(VectorDatabase):
 
     def clear(self) -> None:
         self.client.delete_collection(self.collection_name)
-        self.client.get_or_create_collection(
-            collection_name=self.collection_name,
-            vectors_config=VectorParams(size=512, distance=Distance.COSINE),
-        )
-        
-if __name__ == "__main__":
-    qvd = QdrantVectorDatabase(collection_name="test")
