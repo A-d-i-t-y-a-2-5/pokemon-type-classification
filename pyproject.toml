@@ -12,6 +12,7 @@ dependencies = [
     "pandas>=2.3.3",
     "plotly>=6.5.1",
     "python-multipart>=0.0.22",
+    "qdrant-client>=1.17.0",
     "scikit-image>=0.25.2",
     "scikit-learn>=1.7.2",
     "streamlit>=1.54.0",

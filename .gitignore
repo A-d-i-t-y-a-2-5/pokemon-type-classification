@@ -170,3 +170,4 @@ cython_debug/
 analysis.py
 
 uploads/
+qdrant_storage/
