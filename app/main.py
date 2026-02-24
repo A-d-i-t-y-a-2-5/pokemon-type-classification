@@ -1,12 +1,16 @@
+import asyncio
 import os
 
-import aiofiles
 from aiofiles.os import listdir, remove, rmdir
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, status, File
 from typing import Annotated
 from upload import save_file
 import uvicorn
+
+from models.clip import vectorize_images
+
 
 ALLOWED_CONTENT_TYPES = {
     "image/jpg",
@@ -15,9 +19,13 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 
+executor = ThreadPoolExecutor(max_workers=2)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    executor.shutdown(wait=True)
     try:
         files = await listdir("uploads")
         for file in files:
@@ -47,14 +55,23 @@ async def file_upload_controller(
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
     try:
+        filenames = []
         for file in files:
             await save_file(file)
+            filenames.append(os.path.basename(file.filename))
+
+        loop = asyncio.get_event_loop()
+        features = await loop.run_in_executor(executor, vectorize_images, filenames)
     except Exception as e:
         raise HTTPException(
             detail=f"An error occurred while saving file - Error: {e}",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    return {"message": "Files uploaded successfully"}
+    return {
+        "message": "Files uploaded successfully",
+        "features_rows": features.shape[0],
+        "features_columns": features.shape[1],
+    }
 
 
 @app.get("/images")
