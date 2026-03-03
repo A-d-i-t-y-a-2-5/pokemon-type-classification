@@ -6,6 +6,8 @@ import streamlit as st
 
 from PIL import Image
 
+MAX_BATCH_SIZE = 1000
+
 uploaded_files = st.file_uploader(
     "Upload an image",
     type=["jpg", "jpeg", "png"],
@@ -15,12 +17,15 @@ uploaded_files = st.file_uploader(
 
 if st.button("Submit"):
     if uploaded_files is not None:
-        files = [("files", (file.name, file, file.type)) for file in uploaded_files]
-        response = requests.post("http://localhost:8000/upload", files=files)
-        st.write(response.text)
+        total = len(uploaded_files)
+        batches = [uploaded_files[i : i + MAX_BATCH_SIZE] for i in range(0, total, MAX_BATCH_SIZE)]
+        for batch in batches:
+            files = [("files", (file.name, file, file.type)) for file in batch]
+            response = requests.post("http://localhost:8000/upload", files=files)
+            st.write(response.text)
     else:
         st.write("No file uploaded.")
-        
+
 if st.button("View Uploaded Images"):
     response = requests.get("http://localhost:8000/images")
     if response.status_code == 200:
@@ -36,3 +41,28 @@ if st.button("View Uploaded Images"):
             st.write("No images found.")
     else:
         st.write("Failed to retrieve images.")
+
+st.subheader("Search Similar Images")
+query = st.text_input("Enter a search query", placeholder="e.g. a dog on a beach")
+if st.button("Search"):
+    if query:
+        response = requests.post(
+            "http://localhost:8000/search",
+            json={"query": query, "top_k": 5},
+        )
+        if response.status_code == 200:
+            data = response.json()
+            results = data["results"]
+            # # st.write(f"Top {len(results)} similar images")
+            # st.write(results)
+            if results:
+                cols = st.columns(5)
+                for col, result in zip(cols, results):
+                    image = Image.open(os.path.join("uploads", result))
+                    col.image(image, caption=result, width="stretch")
+            else:
+                st.write("No similar images found.")
+        else:
+            st.write("Search failed.")
+    else:
+        st.write("Please enter a query.")

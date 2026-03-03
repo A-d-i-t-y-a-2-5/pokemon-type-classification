@@ -23,3 +23,8 @@ def vectorize_images(image_paths: list[str]) -> torch.FloatTensor:
     inputs = processor(images=images, return_tensors="pt")
     with torch.inference_mode():
         return model.get_image_features(**inputs).pooler_output
+    
+def vectorize_text(text: str):
+    inputs = processor(text=text, return_tensors="pt")
+    with torch.inference_mode():
+        return model.get_text_features(**inputs).pooler_output
