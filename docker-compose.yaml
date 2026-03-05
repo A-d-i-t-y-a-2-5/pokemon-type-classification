@@ -12,3 +12,26 @@ services:
       - QDRANT__SERVICE__GRPC_PORT=6334
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage
+  fastapi:
+    build: .
+    container_name: pokemon_api
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - qdrant
+    volumes:
+      - ./uploads:/app/uploads
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  streamlit:
+    build: .
+    container_name: pokemon_ui
+    restart: always
+    ports:
+      - "8501:8501"
+    depends_on:
+      - fastapi
+    volumes:
+      - ./uploads:/app/uploads
+    command: uv run streamlit run app/interface.py

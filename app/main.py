@@ -39,6 +39,7 @@ class SearchRequest(BaseModel):  # new
 vector_service = VectorServiceFactory.create(
     db_type=VectorDatabaseType.QDRANT,
     collection_name="images",
+    host="qdrant"
 )
 
 

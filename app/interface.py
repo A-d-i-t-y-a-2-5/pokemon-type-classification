@@ -21,13 +21,13 @@ if st.button("Submit"):
         batches = [uploaded_files[i : i + MAX_BATCH_SIZE] for i in range(0, total, MAX_BATCH_SIZE)]
         for batch in batches:
             files = [("files", (file.name, file, file.type)) for file in batch]
-            response = requests.post("http://localhost:8000/upload", files=files)
+            response = requests.post("http://fastapi:8000/upload", files=files)
             st.write(response.text)
     else:
         st.write("No file uploaded.")
 
 if st.button("View Uploaded Images"):
-    response = requests.get("http://localhost:8000/images")
+    response = requests.get("http://fastapi:8000/images")
     if response.status_code == 200:
         data = response.json()
         images = data["images"]
@@ -35,7 +35,7 @@ if st.button("View Uploaded Images"):
         if images:
             cols = st.columns(5)
             for col, filename in zip(cols, images[:5]):
-                image = Image.open(os.path.join("uploads", filename))
+                image = Image.open(os.path.join("/app/uploads", filename))
                 col.image(image, caption=filename)
         else:
             st.write("No images found.")
@@ -47,7 +47,7 @@ query = st.text_input("Enter a search query", placeholder="e.g. a dog on a beach
 if st.button("Search"):
     if query:
         response = requests.post(
-            "http://localhost:8000/search",
+            "http://fastapi:8000/search",
             json={"query": query, "top_k": 5},
         )
         if response.status_code == 200:
@@ -58,7 +58,7 @@ if st.button("Search"):
             if results:
                 cols = st.columns(5)
                 for col, result in zip(cols, results):
-                    image = Image.open(os.path.join("uploads", result))
+                    image = Image.open(os.path.join("/app/uploads", result))
                     col.image(image, caption=result, width="stretch")
             else:
                 st.write("No similar images found.")
