@@ -17,7 +17,8 @@ from fastapi import (
 from typing import Annotated, List, Optional
 
 from pydantic import BaseModel
-from app.rag.vector_service import VectorDatabaseType, VectorServiceFactory
+from app.rag.vector_service import VectorServiceFactory
+from app.rag.constants import VectorDatabaseType
 from app.upload import save_file
 import uvicorn
 
