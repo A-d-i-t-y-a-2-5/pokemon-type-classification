@@ -1,6 +1,11 @@
 from abc import ABC, abstractmethod
 
 class VectorDatabase(ABC):
+    
+    @abstractmethod
+    def create(self, collection_name: str, vector_size: int) -> None:
+        """Create a new collection with the specified name and vector size."""
+        pass
 
     @abstractmethod
     def insert(self, id: str, vector: list[float], metadata: dict | None = None) -> None:

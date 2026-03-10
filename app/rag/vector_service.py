@@ -50,10 +50,10 @@ class VectorServiceFactory:
         if db_type == VectorDatabaseType.QDRANT:
             db = QdrantVectorDatabase(
                 collection_name=collection_name,
-                vector_size=vector_size,
                 host=kwargs.get("host", "localhost"),
                 port=kwargs.get("port", 6333),
             )
+            db.create(vector_size=vector_size)
         else:
             raise ValueError(f"Unsupported database type: {db_type}")
 

@@ -21,6 +21,12 @@ from app.rag.vector_service import VectorDatabaseType, VectorServiceFactory
 from app.upload import save_file
 import uvicorn
 
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 ALLOWED_CONTENT_TYPES = {
     "image/jpg",
@@ -32,9 +38,6 @@ ALLOWED_CONTENT_TYPES = {
 class SearchRequest(BaseModel):  # new
     query: str
     top_k: int = 5
-
-
-# executor = ThreadPoolExecutor(max_workers=2)
 
 vector_service = VectorServiceFactory.create(
     db_type=VectorDatabaseType.QDRANT,
