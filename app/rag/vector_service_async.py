@@ -4,6 +4,9 @@ from app.models.clip import vectorize_images, vectorize_text
 from app.rag.constants import VectorDatabaseType
 
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AsyncVectorService:
     def __init__(self, db: VectorDatabase):

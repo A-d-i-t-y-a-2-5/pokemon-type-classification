@@ -18,14 +18,15 @@ from typing import Annotated, List, Optional
 
 from pydantic import BaseModel
 from app.rag.vector_service import VectorServiceFactory
+from app.rag.vector_service_async import AsyncVectorServiceFactory
 from app.rag.constants import VectorDatabaseType
 from app.upload import save_file
 import uvicorn
 
 import logging
+
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 
@@ -40,15 +41,16 @@ class SearchRequest(BaseModel):  # new
     query: str
     top_k: int = 5
 
-vector_service = VectorServiceFactory.create(
-    db_type=VectorDatabaseType.QDRANT,
-    collection_name="images",
-    host="qdrant"
-)
+
+vector_service = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global vector_service
+    vector_service = await AsyncVectorServiceFactory.create(
+        db_type=VectorDatabaseType.AQDRANT, collection_name="images", host="qdrant"
+    )
     yield
     # executor.shutdown(wait=True)
     try:
@@ -63,7 +65,7 @@ async def lifespan(app: FastAPI):
 
     # clear the vector database on shutdown
     try:
-        vector_service.clear_all()
+        await vector_service.clear_all()
     except Exception as e:
         print(f"Failed to clear vectors on shutdown - {e}")
 
@@ -136,10 +138,13 @@ async def get_images_controller(
 
 
 @app.post("/search")
-def search_similar_images_controller(request: SearchRequest):
+async def search_similar_images_controller(request: SearchRequest):
     try:
-        query_vector = vector_service.vectorize_query(request.query)
-        results = vector_service.search_similar(
+        loop = asyncio.get_running_loop()
+        query_vector = await loop.run_in_executor(
+            None, vector_service.vectorize_query, request.query
+        )
+        results = await vector_service.search_similar(
             query_vector=query_vector, top_k=request.top_k
         )
         filenames = [result.payload["filename"] for result in results]

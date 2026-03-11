@@ -63,6 +63,6 @@ if st.button("Search"):
             else:
                 st.write("No similar images found.")
         else:
-            st.write("Search failed.")
+            st.write(f"Search failed due to {response.text}")
     else:
         st.write("Please enter a query.")
