@@ -43,14 +43,16 @@ class SearchRequest(BaseModel):  # new
 
 
 vector_service = None
+vectorization_queue = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global vector_service
+    global vector_service, vectorization_queue
     vector_service = await AsyncVectorServiceFactory.create(
         db_type=VectorDatabaseType.AQDRANT, collection_name="images", host="qdrant"
     )
+    vectorization_queue = []
     yield
     # executor.shutdown(wait=True)
     try:
@@ -89,12 +91,9 @@ async def file_upload_controller(
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
     try:
-        filenames = []
         for file in files:
             await save_file(file)
-            filenames.append(os.path.basename(file.filename))
-
-        bg_image_processor.add_task(vector_service.process_images, filenames)
+            vectorization_queue.append(os.path.basename(file.filename))
 
     except Exception as e:
         raise HTTPException(
@@ -103,6 +102,22 @@ async def file_upload_controller(
         )
     return {"message": "Files uploaded successfully"}
 
+@app.post("/process")
+async def process_images_controller(background_tasks: BackgroundTasks):
+    """
+    Endpoint to trigger the vectorization of files that have been uploaded.
+    """
+    
+    if not vectorization_queue:
+        return {"message": "No pending files to process."}
+
+    files_to_process = list(vectorization_queue)
+    vectorization_queue.clear()  # Clear the list after copying
+    
+    background_tasks.add_task(vector_service.process_images, files_to_process)
+    
+    logging.info(f"Triggered processing for {len(files_to_process)} files.")
+    return {"message": f"Processing initiated for {len(files_to_process)} files."}
 
 @app.get("/images")
 async def get_images_controller(

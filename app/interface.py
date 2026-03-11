@@ -23,6 +23,11 @@ if st.button("Submit"):
             files = [("files", (file.name, file, file.type)) for file in batch]
             response = requests.post("http://fastapi:8000/upload", files=files)
             st.write(response.text)
+        process_response = requests.post("http://fastapi:8000/process")
+        if process_response.status_code == 200:
+            st.success(process_response.text)
+        else:
+            st.error(f"Vectorization trigger failed: {process_response.text}")
     else:
         st.write("No file uploaded.")
 
