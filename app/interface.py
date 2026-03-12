@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import os
 import random
 
@@ -18,11 +19,21 @@ uploaded_files = st.file_uploader(
 if st.button("Submit"):
     if uploaded_files is not None:
         total = len(uploaded_files)
-        batches = [uploaded_files[i : i + MAX_BATCH_SIZE] for i in range(0, total, MAX_BATCH_SIZE)]
-        for batch in batches:
+        batches = [
+            uploaded_files[i : i + MAX_BATCH_SIZE]
+            for i in range(0, total, MAX_BATCH_SIZE)
+        ]
+
+        def upload_batch(batch):
             files = [("files", (file.name, file, file.type)) for file in batch]
-            response = requests.post("http://fastapi:8000/upload", files=files)
-            st.write(response.text)
+            return requests.post("http://fastapi:8000/upload", files=files)
+
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(upload_batch, batch) for batch in batches]
+            for future in futures:
+                response = future.result()
+                st.write(response.text)
+
         process_response = requests.post("http://fastapi:8000/process")
         if process_response.status_code == 200:
             st.success(process_response.text)
